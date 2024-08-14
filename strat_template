@@ -1,0 +1,49 @@
+from freqtrade.strategy import IStrategy
+from pandas import DataFrame
+import freqtrade.vendor.qtpylib.indicators as qtpylib
+import talib.abstract as ta
+from freqtrade.persistence import Trade
+from datetime import datetime, timedelta
+class strat_template (IStrategy):
+    def version(self) -> str:
+        return "template-v1"
+    INTERFACE_VERSION = 3
+    minimal_roi = {
+        "0": 0.05
+    }
+    stoploss = -0.05
+    timeframe = '15m'
+    process_only_new_candles = True
+    startup_candle_count = 999
+    use_custom_stoploss = True
+    def custom_stoploss(self, pair: str, trade: 'Trade', current_time: datetime, current_rate: float, current_profit: float, **kwargs) -> float:
+        
+        sl_new = 1
+        if (current_time - timedelta(minutes=15) >= trade.open_date_utc):
+            dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
+            current_candle = dataframe.iloc[-1].squeeze()
+            current_profit = trade.calc_profit_ratio(current_candle['close'])
+            if (current_profit >= 0.03):
+                sl_new = 0.01
+        return sl_new
+    def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe['ema_9'] = ta.EMA(dataframe, 9)
+        dataframe['ema_20'] = ta.EMA(dataframe, 20)
+        return dataframe
+    
+    def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe.loc[
+            qtpylib.crossed_above(dataframe['ema_9'], dataframe['ema_20'])
+            &
+            (dataframe['volume'] > 0)
+            , ['enter_long', 'enter_tag']
+        ] = (1, 'golden cross')
+        return dataframe
+    def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
+        dataframe.loc[
+            qtpylib.crossed_below(dataframe['ema_9'], dataframe['ema_20'])
+            &
+            (dataframe['volume'] > 0)
+            , ['exit_long', 'exit_tag']
+        ] = (1, 'death cross')
+        return dataframe
